@@ -1,0 +1,22 @@
+{
+  "name": "llp-monorepo",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "npm run dev -w @llp/web",
+    "dev:api": "npm run dev -w @llp/api",
+    "db:up": "docker compose up -d postgres",
+    "db:down": "docker compose down",
+    "build": "npm run build -w @llp/web && npm run build -w @llp/api",
+    "build:web": "npm run build -w @llp/web",
+    "build:api": "npm run build -w @llp/api"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+:root {
+  --background: 34 62% 98%;
+  --foreground: 164 28% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 164 28% 14%;
+  --primary: 212 84% 42%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 210 56% 94%;
+  --secondary-foreground: 215 42% 24%;
+  --muted: 210 28% 95%;
+  --muted-foreground: 214 18% 40%;
+  --destructive: 0 84% 60%;
+  --border: 213 28% 85%;
+  --input: 213 28% 85%;
+  --ring: 212 84% 42%;
+  --radius: 0.8rem;
+  font-family: "Space Grotesk", "Segoe UI", "Noto Sans", Arial, sans-serif;
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: hsl(var(--foreground));
+  background:
+    radial-gradient(circle at 12% 16%, rgba(59, 130, 246, 0.14), transparent 40%),
+    radial-gradient(circle at 82% 14%, rgba(56, 189, 248, 0.14), transparent 34%),
+    linear-gradient(160deg, hsl(var(--background)) 0%, #f8fbff 48%, #f6fffa 100%);
+}

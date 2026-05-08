@@ -1,0 +1,17 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: llp-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: llp_chat
+      POSTGRES_USER: llp_user
+      POSTGRES_PASSWORD: llp_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - llp_postgres_data:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d
+
+volumes:
+  llp_postgres_data:
