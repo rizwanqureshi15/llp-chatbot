@@ -1,11 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  LLP_QUESTIONS,
   createInitialLlpData,
   extractFormMarker,
-  getLlpQuestionByMarker,
-  getLlpStepIndexByMarker,
-  isLikelyOffTopicInput,
 } from "../config/llpFlow";
 import {
   fetchChatMessages,
@@ -21,17 +17,10 @@ import ChatInput from "./ChatInput";
 import QuickReplies from "./QuickReplies";
 import { Button } from "./ui/button";
 import { Card, CardDescription, CardHeader, CardTitle } from "./ui/card";
-import type { LlpFieldKey, LlpFormData, Message } from "../types/chat";
+import type { LlpFormData, Message } from "../types/chat";
 
 export default function ChatWindow() {
-  const REGISTERED_OFFICE_FIELDS: LlpFieldKey[] = [
-    "registered_office_address_line1",
-    "registered_office_address_line2",
-    "registered_office_city",
-    "registered_office_state",
-    "registered_office_country",
-    "registered_office_zip_code",
-  ];
+
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentStep, setCurrentStep] = useState<number>(0);
@@ -50,32 +39,21 @@ export default function ChatWindow() {
   const didInitializeRef = useRef<boolean>(false);
   const isSubmitting = submitStatus === "submitting";
   const isBusy = isSubmitting || isAwaitingAi;
-  const activeStep = LLP_QUESTIONS[currentStep];
-  const showLlpNameForm = activeStep?.field === "proposed_llp_name";
+  // Step logic is now AI-driven
+  const [activeStep, setActiveStep] = useState<{ marker: string | null; question: string; options?: string[] } | null>(null);
+  const showLlpNameForm = activeStep?.marker === "llp_name_preferences";
 
-  const hasRegisteredOfficeData = (data: Partial<LlpFormData>): boolean => {
-    return Boolean(
-      data.registered_office_address_line1?.trim() &&
-        data.registered_office_city?.trim() &&
-        data.registered_office_state?.trim() &&
-        data.registered_office_country?.trim() &&
-        data.registered_office_zip_code?.trim(),
-    );
-  };
 
-  const showRegisteredOfficeForm =
-    Boolean(activeStep?.field && REGISTERED_OFFICE_FIELDS.includes(activeStep.field)) &&
-    !hasRegisteredOfficeData(formData);
+
+  const showRegisteredOfficeForm = false;
   const inputPlaceholder = useMemo(() => {
     if (completed) {
       return "Conversation completed. Start a new chat to continue.";
     }
-
     if (isAwaitingAi) {
       return "Waiting for assistant...";
     }
-
-    return activeStep?.placeholder || "Type your answer...";
+    return activeStep?.question || "Type your answer...";
   }, [activeStep, completed, isAwaitingAi]);
 
   const hasRequiredLlpData = (data: Partial<LlpFormData>): boolean => {
@@ -105,77 +83,17 @@ export default function ChatWindow() {
     questionText: string,
     responseOptions: string[] | undefined,
     updatedFormData?: Partial<LlpFormData>,
-    fallbackStepIndex = 0,
+
   ): Promise<void> => {
     const { cleanedText, marker } = extractFormMarker(questionText);
 
-    const markerStep = marker ? getLlpQuestionByMarker(marker) : undefined;
-    const markerField = markerStep?.field;
-    const shouldSkipAddressMarker =
-      Boolean(markerField) &&
-      REGISTERED_OFFICE_FIELDS.includes(markerField as LlpFieldKey) &&
-      Boolean(updatedFormData) &&
-      hasRegisteredOfficeData(updatedFormData || {});
-
-    if (cleanedText && !shouldSkipAddressMarker && !marker) {
-      appendBotMessage(cleanedText);
-    }
-
-    if (marker) {
-      if (shouldSkipAddressMarker) {
-        const nextStepIndex = LLP_QUESTIONS.findIndex(
-          (step) => step.field === "total_partners",
-        );
-        const resolvedNextStepIndex = nextStepIndex >= 0 ? nextStepIndex : fallbackStepIndex + 1;
-        const nextStep = LLP_QUESTIONS[resolvedNextStepIndex];
-
-        if (nextStep) {
-          setCurrentStep(resolvedNextStepIndex);
-          setOptions(nextStep.options || []);
-          appendBotMessage(nextStep.question);
-        }
-        return;
-      }
-
-      const stepIndex = getLlpStepIndexByMarker(marker);
-      const nextStep = getLlpQuestionByMarker(marker);
-      const isMarkerOnlyRepeat = !cleanedText && stepIndex === fallbackStepIndex;
-      let resolvedStepIndex =
-        isMarkerOnlyRepeat && fallbackStepIndex < LLP_QUESTIONS.length - 1
-          ? fallbackStepIndex + 1
-          : stepIndex >= 0
-            ? stepIndex
-            : fallbackStepIndex;
-
-      // Keep progression strict: do not allow AI marker jumps beyond the immediate next step.
-      if (updatedFormData && resolvedStepIndex > fallbackStepIndex + 1) {
-        resolvedStepIndex = Math.min(fallbackStepIndex + 1, LLP_QUESTIONS.length - 1);
-      }
-
-      const resolvedStep = LLP_QUESTIONS[resolvedStepIndex] || nextStep;
-
-      if (!shouldSkipAddressMarker) {
-        if (updatedFormData && resolvedStep?.question) {
-          appendBotMessage(resolvedStep.question);
-        } else if (cleanedText) {
-          appendBotMessage(cleanedText);
-        } else if (resolvedStep?.question) {
-          appendBotMessage(resolvedStep.question);
-        }
-      }
-
-      setCurrentStep(resolvedStepIndex);
-
-      setOptions(responseOptions || resolvedStep?.options || []);
-      return;
-    }
-
-    setOptions([]);
-
+    // AI-driven: just show cleanedText and set active step
+    if (cleanedText) appendBotMessage(cleanedText);
+    setActiveStep({ marker: marker || null, question: cleanedText || questionText, options: responseOptions });
+    setOptions(responseOptions || []);
     if (updatedFormData && hasRequiredLlpData(updatedFormData)) {
       const finalData = buildFinalData(updatedFormData);
       setCompleted(true);
-      setCurrentStep(LLP_QUESTIONS.length);
       setMessages((prev) => [
         ...prev,
         {
@@ -186,23 +104,6 @@ export default function ChatWindow() {
         },
       ]);
       await submitFinalData(finalData);
-      return;
-    }
-
-    // Safety fallback: if AI misses marker, continue deterministic guided flow.
-    if (updatedFormData) {
-      const nextStepIndex = Math.min(fallbackStepIndex + 1, LLP_QUESTIONS.length - 1);
-
-      if (nextStepIndex > fallbackStepIndex) {
-        const nextStep = LLP_QUESTIONS[nextStepIndex];
-        setCurrentStep(nextStepIndex);
-        setOptions(responseOptions || nextStep.options || []);
-
-        const needsPrompt = !cleanedText || !/[?]$/.test(cleanedText.trim());
-        if (needsPrompt) {
-          appendBotMessage(nextStep.question);
-        }
-      }
     }
   };
 
@@ -220,7 +121,7 @@ export default function ChatWindow() {
       const response = await startChat();
       const initialText = response.question || "Let's start your LLP registration intake.";
       setAiSessionId(response.session_id);
-      await applyAssistantStep(initialText, response.options, undefined, 0);
+      await applyAssistantStep(initialText, response.options, undefined);
     } catch (error) {
       const message =
         error instanceof Error
@@ -248,28 +149,25 @@ export default function ChatWindow() {
     const hydrateChat = async (): Promise<void> => {
       const storedState = loadChatState();
 
-      if (storedState && (storedState.completed || storedState.aiSessionId)) {
-        let hydratedMessages = storedState.messages;
-
-        if (storedState.aiSessionId) {
-          try {
-            const dbMessages = await fetchChatMessages(storedState.aiSessionId);
-            if (dbMessages.length > 0) {
-              hydratedMessages = dbMessages;
-            }
-          } catch (error) {
-            console.warn("Failed to load messages from database, using local cache.", error);
+      if (storedState && storedState.aiSessionId) {
+        try {
+          const dbMessages = await fetchChatMessages(storedState.aiSessionId);
+          if (dbMessages.length > 0) {
+            setMessages(dbMessages);
+          } else {
+            setMessages(storedState.messages);
           }
+        } catch (error) {
+          console.warn("Failed to load messages from database, using local cache.", error);
+          setMessages(storedState.messages);
         }
-
-        setMessages(hydratedMessages);
         setCurrentStep(storedState.currentStep);
         setAiSessionId(storedState.aiSessionId);
         setFormData(storedState.formData);
         setCompleted(storedState.completed);
         setSubmitStatus(storedState.submitStatus);
         setSubmitError(storedState.submitError);
-        setOptions(storedState.completed ? [] : LLP_QUESTIONS[storedState.currentStep]?.options || []);
+        setOptions([]);
         setHasHydrated(true);
         return;
       }
@@ -300,8 +198,26 @@ export default function ChatWindow() {
     });
   }, [messages, currentStep, aiSessionId, formData, completed, submitStatus, submitError, hasHydrated]);
 
+
+  // Always fetch latest messages from backend after user/assistant turn
+  const syncMessagesFromBackend = async (sessionId: string | null) => {
+    if (!sessionId) return;
+    try {
+      const dbMessages = await fetchChatMessages(sessionId);
+      if (dbMessages.length > 0) {
+        setMessages(dbMessages);
+      }
+    } catch (error) {
+      // fallback: do nothing, keep current messages
+    }
+  };
+
   const appendBotMessage = (text: string): void => {
     setMessages((prev) => [...prev, { sender: "bot", text }]);
+    // Also sync from backend if session exists
+    if (aiSessionId) {
+      void syncMessagesFromBackend(aiSessionId);
+    }
   };
 
   const buildFinalData = (data: Partial<LlpFormData>): LlpFormData => {
@@ -408,136 +324,7 @@ export default function ChatWindow() {
     return null;
   };
 
-  const normalizeAnswer = (
-    field: LlpFieldKey,
-    answer: string,
-    existingData: Partial<LlpFormData>,
-  ): { value?: LlpFormData[LlpFieldKey]; error?: string } => {
-    const normalized = answer.trim();
 
-    if (!normalized) {
-      return { error: "This field is required. Please provide a valid answer." };
-    }
-
-    if (field !== "proposed_llp_name" && isLikelyOffTopicInput(normalized)) {
-      return {
-        error:
-          "Please stay on LLP formation details. This answer seems unrelated to the current intake question.",
-      };
-    }
-
-    if (field === "applicant_name") {
-      if (!looksMeaningfulText(normalized, 3) || /^\d+$/.test(normalized)) {
-        return { error: "Please enter a valid full name." };
-      }
-      return { value: normalized };
-    }
-
-    if (field === "email") {
-      const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!validEmail.test(normalized)) {
-        return { error: "Please provide a valid email address." };
-      }
-      return { value: normalized };
-    }
-
-    if (field === "phone") {
-      if (!/^\d{10}$/.test(normalized)) {
-        return { error: "Phone should be a 10 digit number." };
-      }
-      return { value: normalized };
-    }
-
-    if (field === "business_activity") {
-      if (!looksMeaningfulText(normalized, 4)) {
-        return { error: "Please describe the business activity clearly." };
-      }
-      return { value: normalized };
-    }
-
-    if (field === "registered_office_zip_code") {
-      if (!/^[A-Za-z0-9\-\s]{4,10}$/.test(normalized)) {
-        return {
-          error: "ZIP/Postal code should be 4 to 10 characters (letters, numbers, spaces or -).",
-        };
-      }
-      return { value: normalized };
-    }
-
-    if (field === "registered_office_address_line2") {
-      if (normalized.toLowerCase() === "na" || normalized.toLowerCase() === "n/a") {
-        return { value: "" as LlpFormData[LlpFieldKey] };
-      }
-      return { value: normalized as LlpFormData[LlpFieldKey] };
-    }
-
-    if (field === "total_partners" || field === "designated_partners") {
-      const parsed = Number.parseInt(normalized, 10);
-      if (Number.isNaN(parsed) || parsed <= 0) {
-        return { error: "Please provide a valid number greater than 0." };
-      }
-
-      if (field === "designated_partners") {
-        const totalPartners = Number(existingData.total_partners || 0);
-        if (totalPartners > 0 && parsed > totalPartners) {
-          return {
-            error: "Designated partners cannot be greater than total partners.",
-          };
-        }
-      }
-
-      return { value: parsed as LlpFormData[LlpFieldKey] };
-    }
-
-    if (field === "capital_contribution") {
-      const parsed = Number.parseFloat(normalized);
-      if (Number.isNaN(parsed) || parsed <= 0) {
-        return { error: "Please provide a valid contribution amount." };
-      }
-      return { value: parsed as LlpFormData[LlpFieldKey] };
-    }
-
-    if (field === "agreement_required") {
-      const yesValues = ["yes", "y", "true"];
-      const noValues = ["no", "n", "false"];
-      const lower = normalized.toLowerCase();
-
-      if (yesValues.includes(lower)) {
-        return { value: true as LlpFormData[LlpFieldKey] };
-      }
-
-      if (noValues.includes(lower)) {
-        return { value: false as LlpFormData[LlpFieldKey] };
-      }
-
-      return { error: "Please answer with Yes or No." };
-    }
-
-    if (field === "partner_details") {
-      const partners = normalized
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-
-      if (partners.length === 0) {
-        return { error: "Please provide at least one partner name." };
-      }
-
-      return { value: partners as LlpFormData[LlpFieldKey] };
-    }
-
-    if (field === "notes") {
-      if (normalized.toLowerCase() === "none") {
-        return { value: normalized as LlpFormData[LlpFieldKey] };
-      }
-
-      if (!looksMeaningfulText(normalized, 3)) {
-        return { error: "Please enter a more meaningful note or type 'None'." };
-      }
-    }
-
-    return { value: normalized as LlpFormData[LlpFieldKey] };
-  };
 
   const submitFinalData = async (data: LlpFormData): Promise<void> => {
     setSubmitStatus("submitting");
@@ -563,6 +350,7 @@ export default function ChatWindow() {
     }
   };
 
+
   const sendUserAnswer = async (
     answerText: string,
     updatedFormData: Partial<LlpFormData>,
@@ -580,7 +368,9 @@ export default function ChatWindow() {
         session_id: aiSessionId,
         answer: answerText,
       });
-      await applyAssistantStep(response.question || "", response.options, updatedFormData, currentStep);
+      await applyAssistantStep(response.question || "", response.options, updatedFormData);
+      // Always sync messages from backend after assistant responds
+      await syncMessagesFromBackend(aiSessionId);
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Failed to continue the LLP intake.";
@@ -590,30 +380,23 @@ export default function ChatWindow() {
     }
   };
 
+
   const handleSend = async (text: string) => {
     if (completed || isBusy || !activeStep) return;
 
     setMessages((prev) => [...prev, { sender: "user", text }]);
-
-    const normalized = normalizeAnswer(activeStep.field, text, formData);
-    if (normalized.error) {
-      const retryQuestion = activeStep.question || "Please share that detail.";
-      const errorText = normalized.error;
-      setMessages((prev) => [
-        ...prev,
-        { sender: "bot", text: errorText },
-        { sender: "bot", text: retryQuestion },
-      ]);
-      return;
+    // Always sync messages from backend after user sends
+    if (aiSessionId) {
+      await syncMessagesFromBackend(aiSessionId);
     }
 
     const updatedFormData = {
       ...formData,
-      [activeStep.field]: normalized.value,
     } as Partial<LlpFormData>;
 
     await sendUserAnswer(text, updatedFormData);
   };
+
 
   const handleNameFormSubmit = async (value: {
     proposed_llp_name: string;
@@ -639,6 +422,9 @@ export default function ChatWindow() {
     );
 
     setMessages((prev) => [...prev, { sender: "user", text: userMessageText }]);
+    if (aiSessionId) {
+      await syncMessagesFromBackend(aiSessionId);
+    }
 
     await sendUserAnswer(
       userMessageText,
@@ -650,6 +436,7 @@ export default function ChatWindow() {
     clearChatState();
     void initializeChat();
   };
+
 
   const handleRegisteredOfficeFormSubmit = async (value: {
     registered_office_address_line1: string;
@@ -680,6 +467,9 @@ export default function ChatWindow() {
     const userMessageText = buildRegisteredOfficeSummary(value);
 
     setMessages((prev) => [...prev, { sender: "user", text: userMessageText }]);
+    if (aiSessionId) {
+      await syncMessagesFromBackend(aiSessionId);
+    }
 
     await sendUserAnswer(userMessageText, updatedFormData);
   };

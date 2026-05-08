@@ -218,6 +218,16 @@ app.post("/api/providers/mistral/chat/answer", async (req, res) => {
       messages: historyResult.rows,
     });
 
+    // --- LOG AI RESPONSE, USER INPUT, SESSION ID, TIMESTAMP ---
+    console.log("[AI LOG]", {
+      timestamp: new Date().toISOString(),
+      sessionId,
+      userInput: answer,
+      aiRawResponse: reply,
+      aiCleaned: getStoredAssistantText(reply),
+    });
+    // ---------------------------------------------------------
+
     const replyMarker = extractFormMarker(reply);
     const storedReply = getStoredAssistantText(reply);
 
